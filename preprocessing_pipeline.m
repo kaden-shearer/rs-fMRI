@@ -275,7 +275,7 @@ for ii = 1%:length(subj_dir)
         '--t1=',anat_file,' ','--t1brain=',[tmp_subj,'_anat_brain.nii.gz'],...
         ' ','--out=',[tmp_subj,'_BOLD_epireg.nii.gz']])
     
-    % == apply 2-stage registration to standard MNI space
+    % == apply 2-stage registration to standard MNI space ==
     
     % copy over MNI_152 file
     mni_path = '/usr/local/fsl/data/standard/';
@@ -289,31 +289,28 @@ for ii = 1%:length(subj_dir)
     
     cd(rs_path)
     
-    % register MPRAGE image into standard space
-    eval(['!',fsl,'flirt',' ','-v',' ','-dof',' ','12',' ',...
-        '-in',' ',[tmp_subj,'_anat_brain.nii.gz'],' ','-ref',' ',...
-        'MNI152_T1_2mm.nii.gz',' ','-omat',' ','MPRAGE_2_MNI.mat'])
-    
-    % concatenate both transformation matricies (.mat) using convert_xfm 
-    % so that the func data can be reseampled into standard space.
-    eval(['!',fsl,'convert_xfm',' ','-omat',' ','func_2_MNI.mat',' ',...
-        '-concat',' ','MPRAGE_2_MNI.mat',' ',[tmp_subj,'_BOLD_epireg.mat']])
-    
-    % apply concatenated transformation to resample functional image using
-    % flirt. Default interpolation method is trilinear - in this case, use
-    % nearest neighbour interpolation. Avg value for voxel depends on
-    % neighbouring values.
-    
-    eval(['!',fsl,'flirt',' ','-v',' ','-interp',' ','nearestneighbour',' ',...
-        '-in',' ',[tmp_subj,'_BOLD_window_avg.nii.gz'],' ','-ref',' ',...
-        'MNI152_T1_2mm.nii.gz',' ','-out',' ',...
-        [tmp_subj,'_BOLD_MNI_registered.nii.gz'],' ','-applyxfm',' ',...
-        '-init',' ','func_2_MNI.mat'])
+    % linear registration - BOLD to T1 - apply affine mat (from epi_reg) to 4d bold data
+    eval(['!',fsl,'flirt',' ','-v',' ','-dof',' ','6',' ',...
+    '-interp',' ','nearestneighbour',' ','-in',' ',[tmp_subj,'_BOLD_window_avg.nii.gz'],...
+    ' ','-ref',' ',[tmp_subj,'_anat_brain.nii.gz'],' ','-applyxfm',' ',...
+    '-init',' ',[tmp_subj,'_BOLD_epireg.mat',' ','-out',' ',...
+    [tmp_subj,'_func2anat4D.nii.gz']])
    
-    % use applyxfm4d instead to apply the transformation to the bold ts?
+    % non-linear registration - T1 to MNI - first for 1 volume (apply to 4d dataset later)
+    eval(['!',fsl,'flirt',' ','-v',' ','-dof',' ','12',' ','-interp',...
+    ' ','nearestneighbour',' ','-in',' ',[tmp_subj,'_anat_brain.nii.gz'],...
+    ' ','-ref',' ','MNI152_T1_2mm.nii.gz',' ','-omat',' ',[tmp_subj,'_T1_2_MNI.mat']])
     
+    % create non-linear mat transformation to apply to 4d data
+    eval(['!',fsl,'fnirt',' ','-v',' ','--in=',[tmp_subj,'_anat_brain.nii.gz'],' ',...
+    '--aff=',[tmp_subj,'_T1_2_MNI.mat'],' ','--cout=',[tmp_subj,'_T1_2_MNI_nonlinear.mat'],...
+    ' ','--config=$FSLDIR/etc/flirtsch/T1_2_MNI152_2mm']])
     
-        
+    % apply to 4d timeseries
+    eval(['!',fsl,'applywarp',' ','-v',' ','-r',' ','MNI152_T1_2mm.nii.gz',' ',...
+    '-i',' ',[tmp_subj,'_func2anat4D.nii.gz'],' ','-w',' ',[tmp_subj,'_T1_2_MNI_nonlinear.mat'],...
+    ' ','-o',' ',[tmp_subj,'_BOLD_MNI.nii.gz']])
+    
     disp(' ')
     disp('registration complete.')
     
