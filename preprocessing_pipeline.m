@@ -296,12 +296,12 @@ for ii = 1%:length(subj_dir)
     '-init',' ',[tmp_subj,'_BOLD_epireg.mat',' ','-out',' ',...
     [tmp_subj,'_func2anat4D.nii.gz']])
    
-    % non-linear registration - T1 to MNI - first for 1 volume (apply to 4d dataset later)
+    % linear registration - T1 to MNI
     eval(['!',fsl,'flirt',' ','-v',' ','-dof',' ','12',' ','-interp',...
     ' ','nearestneighbour',' ','-in',' ',[tmp_subj,'_anat_brain.nii.gz'],...
     ' ','-ref',' ','MNI152_T1_2mm.nii.gz',' ','-omat',' ',[tmp_subj,'_T1_2_MNI.mat']])
     
-    % create non-linear mat transformation to apply to 4d data
+    % non-linear registration - T1 to MNI
     eval(['!',fsl,'fnirt',' ','-v',' ','--in=',[tmp_subj,'_anat_brain.nii.gz'],' ',...
     '--aff=',[tmp_subj,'_T1_2_MNI.mat'],' ','--cout=',[tmp_subj,'_T1_2_MNI_nonlinear.mat'],...
     ' ','--config=$FSLDIR/etc/flirtsch/T1_2_MNI152_2mm']])
@@ -315,8 +315,6 @@ for ii = 1%:length(subj_dir)
     disp('registration complete.')
     
 end
-
-
 
 disp(' ')
 disp('COMPLETE')
