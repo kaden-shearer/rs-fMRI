@@ -267,53 +267,26 @@ for ii = 1%:length(subj_dir)
     copyfile(anat_brain)
     copyfile(wm_seg)
     
-    disp('>>>Running co-registration with MPRAGE data...')
+    disp('>>>Registering functional data to MNI152 space (via hi-res structural scan)...')
     
-    % create affine mat for linear registration
-    eval(['!',fsl,'epi_reg',' ','--echospacing=0.00047',' ','--pedir=-y',' ','-v',' ','--epi=',...
-        [tmp_subj,'_BOLD_meanBrain.nii.gz'],' ',...
-        '--t1=',anat_file,' ','--t1brain=',[tmp_subj,'_anat_brain.nii.gz'],...
-        ' ','--out=',[tmp_subj,'_BOLD_epireg.nii.gz']])
+    % linear registration of func data to structural image
+    eval('!',fsl,'flirt',' ','-v',' ','-ref',' ',[tmp_subj,'_anat_brain.nii.gz'],' ',...
+    '-in',' ',[tmp_subj,'_BOLD_window_avg.nii.gz'],' ','-dof 6',' ','-omat',' ',...
+    [tmp_subj,'_func2struct.mat'])
     
-    % == apply 2-stage registration to standard MNI space
+    % linear registration of structural image to MNI space
+    eval(['!',fsl,'flirt',' ','-ref $FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
+    '-in',' ',[tmp_subj,'_anat_brain.nii.gz'],' ','-omat',' ',[tmp_subj,'_T1_2_MNI.mat']])
     
-    % copy over MNI_152 file
-    mni_path = '/usr/local/fsl/data/standard/';
-    cd(mni_path)
-    mni_img = '/usr/local/fsl/data/standard/MNI152_T1_2mm.nii.gz';
+    % non-linear registration of structural image to MNI space
+    eval(['!',fsl,'fnirt',' ','--in=',anat_file,' ','--aff=',[tmp_subj,'_T1_2_MNI.mat'],...
+    ' ','--cout=',[tmp_subj,'_T1_2_MNI_nonlinear'],' ','--config=T1_2_MNI152_2mm']])
     
-    cd(rs_path)
-    copyfile(mni_img)
-
-    disp('>>>Running 2-stage registration to standard MNI space...')
+    % apply transformation to 4d func data
+    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
+    '--in=',[tmp_subj,'_BOLD_window_avg.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--premat=',[tmp_subj,'_func2struct.mat'],' ','--out=',[tmp_subj,'_BOLD_MNI'])
     
-    cd(rs_path)
-    
-    % register MPRAGE image into standard space
-    eval(['!',fsl,'flirt',' ','-v',' ','-dof',' ','12',' ',...
-        '-in',' ',[tmp_subj,'_anat_brain.nii.gz'],' ','-ref',' ',...
-        'MNI152_T1_2mm.nii.gz',' ','-omat',' ','MPRAGE_2_MNI.mat'])
-    
-    % concatenate both transformation matricies (.mat) using convert_xfm 
-    % so that the func data can be reseampled into standard space.
-    eval(['!',fsl,'convert_xfm',' ','-omat',' ','func_2_MNI.mat',' ',...
-        '-concat',' ','MPRAGE_2_MNI.mat',' ',[tmp_subj,'_BOLD_epireg.mat']])
-    
-    % apply concatenated transformation to resample functional image using
-    % flirt. Default interpolation method is trilinear - in this case, use
-    % nearest neighbour interpolation. Avg value for voxel depends on
-    % neighbouring values.
-    
-    eval(['!',fsl,'flirt',' ','-v',' ','-interp',' ','nearestneighbour',' ',...
-        '-in',' ',[tmp_subj,'_BOLD_window_avg.nii.gz'],' ','-ref',' ',...
-        'MNI152_T1_2mm.nii.gz',' ','-out',' ',...
-        [tmp_subj,'_BOLD_MNI_registered.nii.gz'],' ','-applyxfm',' ',...
-        '-init',' ','func_2_MNI.mat'])
-   
-    % use applyxfm4d instead to apply the transformation to the bold ts?
-    
-    
-        
     disp(' ')
     disp('registration complete.')
     
