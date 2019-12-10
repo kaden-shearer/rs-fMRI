@@ -1,735 +1,708 @@
-%% preprocessing pipeline for rs and movie data
-% created by kaden on 10-24-2019 for the purposes of MSc thesis project
+%% Thesis Pipeline
+% scripted by kaden on 11-12-2019
+% used to process pCASL data and assess BOLD-CBF coupling between rs and
+% movie datasets.
 
-%% ========================= Create Directories ===========================
-clear all
-close all
-clc
+% >> Note: current pipeline only examines control subjects. Update
+% directories for concussed subjects in future iterations.
 
-% create paths to preprocessing software locations
+%% ======================= Create Directories ============================
+
+% paths to processing software
 fsleyes = '/usr/local/fsl/bin/fsleyes';
 fsl = '/usr/local/fsl/bin/';
 afni = '/Users/kaden_shearer/abin/';
-
-% create control subject directory
+% control subject directory
 subj_path = '/Users/kaden_shearer/Dropbox/kaden_thesis/movie_data/varsity_data/controls/';
 subj_dir = dir([subj_path,'n*']);
 
-%% ========================= RS preprocessing ===========================
+%% ========================= RS Pre-Processing =============================
 
-for ii = 1%:length(subj_dir)
+for ii = 1%1:length(subj_dir)
     
-    tmp_subj = subj_dir(ii).name;
-    disp(['============== Working on ',tmp_subj,' RS data... =================='])
-    processdir = [subj_path,tmp_subj,'/rs/norm/'];
-    
-    %% slice timing correction
-    % TR = 4
-    
-    disp('>>>Running slice timing correction..')
-    cd(processdir)
-    eval(['!',fsl,'slicetimer',' ','-i',' ','201*',' ','-o',' ',[tmp_subj,'_RS_slicetimer.nii.gz'],...
-        ' ','-v',' ','-r',' ','4',' ','--odd'])
-  
-    %% split ASL and BOLD echoes
-    % echo 1 = ASL, echo 2 = BOLD
-    
-    disp('>>>Separating data into BOLD and ASL echoes...')
+close all
+clc
 
-    cd(processdir)
-    % ASL echo
-    eval(['!',fsl,'fslroi',' ',[tmp_subj,'_RS_slicetimer.nii.gz'],' ',[tmp_subj,'_rs_ASL.nii.gz'],' ','0',...
-    ' ','140']);
-    % BOLD echo
-    eval(['!',fsl,'fslroi',' ',[tmp_subj,'_RS_slicetimer.nii.gz'],' ',[tmp_subj,'_rs_BOLD.nii.gz'],' ','140',...
-    ' ','140']);
-    
-    %% delete first 2 volumes
-    % allow MR signal to stabilize
-    
-    disp('>>>Stabilizing MR signal...')
+tmp_subj = subj_dir(ii).name;
+disp(['============== Working on ',tmp_subj,' RS data... =================='])
+processdir = [subj_path,tmp_subj,'/rs/norm/'];
+cd(processdir)
 
-    cd(processdir)
-    eval(['!',fsl,'fslroi',' ','*ASL.nii.gz',' ',[tmp_subj,'_ASL_corr.nii.gz'],' ','2',...
-    ' ','138']);
-    eval(['!',fsl,'fslroi',' ','*BOLD.nii.gz',' ',[tmp_subj,'_BOLD_corr.nii.gz'],' ','2',...
-    ' ','138']);
+%% ========================= pCASL Processing =============================
 
-    %% signal despiking - both echoes
-    % use afni????
-    
-    disp('>>>Running signal despiking sequence...')
-    
-    eval(['!',afni,'3dDespike',' ','-nomask',' ',[tmp_subj,'_ASL_corr.nii.gz']]);
-    % QUESTION: use the -nomask option or default???
-    
-    eval(['!',afni,'3dAFNItoNIFTI',' ','-prefix',' ',[tmp_subj,'_ASL_despike.nii.gz'],' ',...
+disp(['>> Preprocessing pCASL data for ',tmp_subj])
+
+%% Slice-timing correction
+% TR = 4s
+
+msg = sprintf('Running slice-timing correction...'); n=numel(msg); fprintf(msg)
+eval(['!',fsl,'slicetimer',' ','-i',' ','201*',' ','-o',' ',[processdir,tmp_subj,'_pcasl_slicetimer.nii.gz'],...
+    ' ','-r',' ','4',' ','--odd'])
+fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
+
+%% Separate BOLD and ASL echoes
+% echo1 = ASL, echo2 = BOLD
+
+msg = sprintf('Separating BOLD and ASL echoes...'); n=numel(msg); fprintf(msg)
+% ASL data
+eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_slicetimer.nii.gz'],...
+    ' ',[processdir,tmp_subj,'_pcasl_ASL.nii.gz'],' ','0',' ','140']);
+% BOLD data
+eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_slicetimer.nii.gz'],...
+    ' ',[processdir,tmp_subj,'_pcasl_BOLD.nii.gz'],' ','140',' ','140']);
+fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
+
+%% Delete first 2 volumes in each echo
+% ensures that the MR signal is stabilized and  subject is acclimitized to
+% loud scanner noises
+
+msg = sprintf('Ensuring MR signal stabilization...'); n=numel(msg); fprintf(msg)
+eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_ASL.nii.gz'],...
+    ' ',[processdir,tmp_subj,'_ASL_corr.nii.gz'],' ','2',' ','138']);
+eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_BOLD.nii.gz'],...
+    ' ',[tmp_subj,'_BOLD_corr.nii.gz'],' ','2',' ','138']);
+fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
+
+%% Signal despiking
+
+msg = sprintf('Running signal despiking...'); n=numel(msg); fprintf(msg)
+
+% despike ASL
+eval(['!',afni,'3dDespike',' ','-nomask',' ',[processdir,tmp_subj,'_ASL_corr.nii.gz']]);
+eval(['!',afni,'3dAFNItoNIFTI',' ','-prefix',' ',[processdir,tmp_subj,'_ASL_despike.nii.gz'],' ',...
         'despike+orig']);
-    
-    % remove default files
-    eval(['!','rm ',' ','despike+orig.BRIK']);
-    eval(['!','rm',' ','despike+orig.HEAD']);
-    
-    eval(['!',afni,'3dDespike',' ','-nomask',' ',[tmp_subj,'_BOLD_corr.nii.gz']]);
-    
-    eval(['!',afni,'3dAFNItoNIFTI',' ','-prefix',' ',[tmp_subj,'_BOLD_despike.nii.gz'],' ',...
+eval(['!','rm ',' ','despike+orig.BRIK']);
+eval(['!','rm',' ','despike+orig.HEAD']);
+
+% despike BOLD
+eval(['!',afni,'3dDespike',' ','-nomask',' ',[processdir,tmp_subj,'_BOLD_corr.nii.gz']]);
+eval(['!',afni,'3dAFNItoNIFTI',' ','-prefix',' ',[processdir,tmp_subj,'_BOLD_despike.nii.gz'],' ',...
         'despike+orig']);
-    
-    % remove default files
-    eval(['!','rm',' ','despike+orig.BRIK']);
-    eval(['!','rm',' ','despike+orig.HEAD']);
-    
-    %% motion correction
-    % rigid body transformations using mcflirt (use volume 1 as template) -
-    % least squares approach and 6 parameter spatial transformation.
-    
-    disp('>>>Running motion correction sequence...')
-    
-    % asl ts motion correction
-    eval(['!',fsl,'mcflirt',' ','-in',' ',[tmp_subj,'_ASL_despike.nii.gz'],' ','-refvol',' ',...
-        1,' ','-out',' ',[tmp_subj,'_ASL_mcf'],' -plots'])
-    
-    % bold ts motion correction
-    eval(['!',fsl,'mcflirt',' ','-in',' ',[tmp_subj,'_BOLD_despike.nii.gz'],' ','-refvol',' ',...
-        1,' ','-out',' ',[tmp_subj,'_BOLD_mcf'],' ','-plots'])
-    
-    %% plot the motion parameters
-    % parameters will be used later in the pipeline
-    
-%     data = load([rs_path,[tmp_subj,'_BOLD_mcf.par']]);
-% 
-%     set(0,'DefaultFigureWindowStyle','docked');
-%     
-%     for ii = 2:length(data)
-%     % calculate mean displacement
-%     mean_displacement(ii,:) = (((data(ii,1)-data(ii-1,1))^2)+...
-%         ((data(ii,2)-data(ii-1,2))^2)+((data(ii,3)-data(ii-1,3))^2)...
-%         +((data(ii,4)-data(ii-1,4))^2)+((data(ii,5)-data(ii-1,5))^2)+...
-%         ((data(ii,6)-data(ii-1,6))^2))^(1/2);  
-%     end
-% 
-%     motion_parameters = [data,mean_displacement(:,1)];
-%     motion_parameters = num2cell(motion_parameters);
-% 
-%     rotation_data = cell2mat(motion_parameters(:,1:3));
-%     translation_data = cell2mat(motion_parameters(:,4:6));
-%     mean_disp = cell2mat(motion_parameters(:,7));
-% 
-%     figure('Name','MCFLIRT Estimated Rotations','NumberTitle','off')
-%     plot(rotation_data,'linewidth',2);
-%     title('MCFLIRT Estimated Rotations');
-%     xlabel('Volume');
-%     ylabel('Rotation (radians)');
-%     yline(0,'--');
-%     legend({'x','y','z','ref'},'location','northwest');
-%     legend boxoff
-%     set(gca,'fontsize',20)
-% 
-%     figure('Name','MCFLIRT Estimated Translations','NumberTitle','off')
-%     plot(translation_data,'linewidth',2);
-%     title('MCFLIRT Estimated Translation');
-%     xlabel('Volume');
-%     ylabel('Translation (mm)');
-%     yline(0,'--');
-%     legend({'x','y','z','ref'},'location','northwest');
-%     legend boxoff
-%     set(gca,'fontsize',20)
-% 
-%     figure('Name','MCFLIRT Mean Displacement','NumberTitle','off')
-%     plot(mean_disp,'linewidth',2);
-%     title('MCFLIRT Mean Displacement');
-%     xlabel('Volume');
-%     ylabel('Mean Displacement (mm)');
-%     yline(0,'--');
-%     legend({'mean displacement'},'location','northwest');
-%     legend boxoff
-%     set(gca,'fontsize',20)
-    
-    %% create mean image for bold and asl echoes
-    % align volumes over time to create mean image for each ts (bold and
-    % asl)
-    
-    disp('>>>Creating mean images from time series...')
-    
-    % mean asl image
-    eval(['!',fsl,'fslmaths',' ',[tmp_subj,'_ASL_mcf.nii.gz'],' ','-Tmean',' ',...
-        [tmp_subj,'_ASL_meanvol.nii.gz']])
-    
-    % mean bold image
-    eval(['!',fsl,'fslmaths',' ',[tmp_subj,'_BOLD_mcf.nii.gz'],' ','-Tmean',' ',...
-        [tmp_subj,'_BOLD_meanvol.nii.gz']])
-    
-    %% brain exactraction
-    % bet brain extration to remove non-brain tissue in each of the mean
-    % images
-    
-    disp('>>>Performing brain extraction...')
-    disp('>>>Creating binary brain masks...')
-    
-    % mean bold image bet
-    eval(['!',fsl,'bet',' ',[tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
-        [tmp_subj,'_BOLD_meanBrain.nii.gz'],' ','-m'])
-    
-    % mean asl image bet
-    eval(['!',fsl,'bet',' ',[tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
-        [tmp_subj,'_ASL_meanBrain.nii.gz'],' ','-m']) 
-    
-    %% =================== BOLD signal reconstruction =====================
-    
-    %% brain extract the 4D bold ts
-    % multiply the 3D binary brain mask over the ts to extract the rest of
-    % the volumes
-    
-    disp('>>>Brain extracting BOLD ts volumes...')
-    
-    cd(processdir)
-    bold_mcf = load_untouch_nii([tmp_subj,'_BOLD_mcf.nii.gz']);
-    bold_img = bold_mcf.img;
-    
-    bold_mask = load_untouch_nii([tmp_subj,'_BOLD_meanBrain_mask.nii.gz']);
-    mask_img = bold_mask.img;
-    mask_img = single(mask_img);
-    
-    clear bold_ts
-    
-    for jj = 1:size(bold_img,4)
-        tmp_vol = bold_img(:,:,:,jj);
-        bet_vol = tmp_vol.*mask_img;
-        bold_ts(:,:,:,jj) = bet_vol;
-    end
-    
-    dyn = size(bold_ts,4);
-    
-    % save it
-    nii_hdr = bold_mcf.hdr; % header isn't changed
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img = bold_ts; % 4D data
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_BOLD_ts.nii.gz']]);
-    
-    %% window average the bold signal data, parse control and label volumes
-    % use a sliding window average technique
-    
-    disp('>>>Window averaging BOLD ts...')
-    
-    % import bold to sum control and label volumes
-    bold_ts_nii = load_untouch_nii([processdir,[tmp_subj,'_BOLD_ts.nii.gz']]);
-    dyn = size(bold_ts,4);
-    
-    % parse the control and label volumes
-    clear echo_ctr echo_lab
-    for ii = 1:dyn/2
-        echo_ctr(:,:,:,ii) = bold_ts(:,:,:,2*ii-1);
-        echo_lab(:,:,:,ii) = bold_ts(:,:,:,2*ii);
-    end
+eval(['!','rm',' ','despike+orig.BRIK']);
+eval(['!','rm',' ','despike+orig.HEAD']);
 
-    % BOLD - sliding window average - addition/subtraction schemes can be
-    % modified.
+fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
-    clear BOLD_e2ts
-    BOLD_e2ts = zeros(size(bold_ts));
-    BOLD_e2ts(:,:,:,1) = (echo_ctr(:,:,:,1)+echo_lab(:,:,:,1))/2; % find mean between echo_ctr and echo_lab
-    BOLD_e2ts(:,:,:,end) = (echo_ctr(:,:,:,end)+echo_lab(:,:,:,end))/2;
+%% MCFLIRT motion correction
+% use first volume as template, least square approach and 6 parameter
+% spatial transformation (rigid-body)
 
-    for ii = 1:dyn/2-1
-        BOLD_e2ts(:,:,:,2*ii+1) = (echo_ctr(:,:,:,ii)+echo_lab(:,:,:,ii))/2;
-        BOLD_e2ts(:,:,:,2*ii) = (echo_lab(:,:,:,ii)+echo_ctr(:,:,:,ii+1))/2;
-    end
+msg = sprintf('Running MCFLIRT motion correction...'); n=numel(msg); fprintf(msg)
 
-    % save it
-    nii_hdr = bold_ts_nii.hdr;
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img=BOLD_e2ts; % BOLD_e2ts is the 
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_BOLD_window_avg.nii.gz']]);
-    
-    %% brain extract T1 anat image
-    
-    disp('>>>Running brain extraction for MPRAGE anat image...')
-    
-    anat_path = [subj_path,tmp_subj,'/anat/'];
-    anat_file = dir([anat_path,'co*']).name;
-    
-    cd(anat_path)
+eval(['!',fsl,'mcflirt',' ','-in',' ',[processdir,tmp_subj,'_ASL_despike.nii.gz'],' ','-refvol',' ',...
+        '1',' ','-out',' ',[processdir,tmp_subj,'_ASL_mcf'],' -plots'])
+eval(['!',fsl,'mcflirt',' ','-in',' ',[processdir,tmp_subj,'_BOLD_despike.nii.gz'],' ','-refvol',' ',...
+        '1',' ','-out',' ',[processdir,tmp_subj,'_BOLD_mcf'],' ','-plots'])
 
-    eval(['!',fsl,'bet',' ',anat_file,' ',[tmp_subj,'_anat_brain.nii.gz'],' ',...
-        '-f',' ','0.65',' ','-g',' ','-0.5'])
-    
-    
-    %% co-registration and transformation into MNI space (2mm)
-    
-    anat_wholehead = [anat_path,anat_file];
-    anat_brain = [anat_path,[tmp_subj,'_anat_brain.nii.gz']];
-    wm_seg = [anat_path,[tmp_subj,'_anat_brain_seg_2.nii.gz']];
-    cd(processdir)
-    copyfile(anat_wholehead)
-    copyfile(anat_brain)
-    copyfile(wm_seg)
-    
-    %%
-    
-    disp('>>>Registering functional data to MNI152 space (via hi-res structural scan)...')
-    
-    disp('  >>>Running FLIRT...')
+fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
-    % linear registration of func data to structural image
-    eval(['!',fsl,'flirt',' ','-ref',' ',[tmp_subj,'_anat_brain.nii.gz'],' ',...
-    '-in',' ',[tmp_subj,'_BOLD_window_avg.nii.gz'],' ','-dof 6',' ','-omat',' ',...
-    [tmp_subj,'_func2struct.mat']])
-    
-    % linear registration of structural image to MNI space
-    eval(['!',fsl,'flirt',' ','-ref $FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '-in',' ',[tmp_subj,'_anat_brain.nii.gz'],' ','-omat',' ',[tmp_subj,'_T1_2_MNI.mat']])
+%% Brain extract ts
+% create mean image, bet mean image, create brain mask, multiply mask
+% through the ts to extract brain tissue
 
-    disp('  >>>Running FNIRT...')
-    
-    % non-linear registration of structural image to MNI space
-    eval(['!',fsl,'fnirt',' ','--in=',anat_file,' ','--aff=',[tmp_subj,'_T1_2_MNI.mat'],...
-    ' ','--cout=',[tmp_subj,'_T1_2_MNI_nonlinear'],' ','--config=T1_2_MNI152_2mm'])
+fprintf('Brain extracting 4D data...'); disp(' ');
 
+% generate mean images
+msg = sprintf('   Generating mean images...'); n=numel(msg); fprintf(msg)
+eval(['!',fsl,'fslmaths',' ',[processdir,tmp_subj,'_ASL_mcf.nii.gz'],' ','-Tmean',' ',...
+        [processdir,tmp_subj,'_ASL_meanvol.nii.gz']])
+eval(['!',fsl,'fslmaths',' ',[processdir,tmp_subj,'_BOLD_mcf.nii.gz'],' ','-Tmean',' ',...
+        [processdir,tmp_subj,'_BOLD_meanvol.nii.gz']])
+fprintf('complete'); disp(' ');
 
-%%
-    disp('  >>>Applying transformation to BOLD ts...')
-    
-    % apply transformation to 4d func data
-    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[tmp_subj,'_BOLD_window_avg.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--premat=',[tmp_subj,'_func2struct.mat'],' ','--out=',[tmp_subj,'_BOLD_MNI']])
+% brain extract mean images, create binary masks
+fprintf('   Running BET brain extraction...'); disp(' ');
 
-
-    %% =================== prepare 4D ASL dataset ========================
-    
-    disp('>>>Preparing ASL dataset')
-    
-    %% use asl_bet mean image to brain extract the 4d asl ts
-    
-    disp(' >>Brain extracting 4D ASL data...')
-
-    working_dir = processdir;
-    ts_img_name = [tmp_subj,'_ASL_mcf.nii.gz'];
-    mask_img_name = [tmp_subj,'_ASL_meanBrain_mask.nii.gz'];
-    save_name = [tmp_subj,'_ASL_ts.nii.gz'];
-    
-    asl_ts = ts_bet(working_dir,ts_img_name,mask_img_name,save_name);
-    
-    %% run surround subtraction on ASL data
-    % computes difference volumes 
-    
-    disp(' >>Running surround substraction...')
-
-    % import bold to sum control and label volumes
-    asl_nii = load_untouch_nii([processdir,[tmp_subj,'_ASL_ts.nii.gz']]);
-    asl_data = double(asl_nii.img);
-    
-    dyn = size(asl_data,4);
-    
-    % surround subtraction of control and labelled images:
-    % difference between each image and the average of its 2 nearest
-    % neighbours is formed - reduces transient artifacts of BOLD weighting
-    
-    for ii = 2:size(asl_data,4)-1
-        if mod(ii,2) == 0 % even
-           diff_vols(:,:,:,ii) = asl_data(:,:,:,ii) - ((asl_data(:,:,:,ii-1) + asl_data(:,:,:,ii+1))./2); % (control) - (avg of surrounding tags)
-        else % odd
-           diff_vols(:,:,:,ii) = -asl_data(:,:,:,ii) + ((asl_data(:,:,:,ii-1) + asl_data(:,:,:,ii+1))./2); % -(tag) + (avg of surrounding controls)
-        end
-    end
-    
-    % fill in dummy data on either end
-    diff_vols(:,:,:,1) = diff_vols(:,:,:,2);
-    diff_vols(:,:,:,end+1) = diff_vols(:,:,:,end);
-    
-    % save it
-    nii_hdr = asl_nii.hdr;
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img=diff_vols; % 4d data
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_ASL_sub.nii.gz']]);
-    
-    %% compute voxelwise CBF0 map
-    % index of basal vascular tension, with partial volume and T2*
-    % corrections.
-    
-    cd(processdir)
-    
-    % path to M0 image
-    m0_path = '/Users/kaden_shearer/Dropbox/kaden_thesis/movie_data/varsity_data/controls/nci.cq.lcf.8/m0/norm/';
-    m0_file = [m0_path,'*.nii.gz'];
-    
-    %% FAST segmentation
-    
-    disp(' >>FAST segmenting anatomical image...')
-    eval(['!',fsl,'fast -g -v ',[tmp_subj,'_anat_brain.nii.gz']])
-    
-   %% adjust for varying PLD due to 2D EPI readout
-   % adjusted on a slice-by-slice basis using PLD = 1000 ms + (St)*(slice-1)
-   % St = slice time correction factor in ms (53.8 ms)
-   
-%    asl_slices = transpose(1:138);
-%    for xx = 1:length(asl_slices)
-%        tmp_slice = asl_slices(xx);
-%        slice_PLD(xx) = (1000 + (53.8*(tmp_slice - 1)))*0.001;
-%    end
-%    
-%    cmd_line_PLD = '1';
-%    
-%    for zz = 2:length(slice_PLD)
-%        tmp_PLD = slice_PLD(zz);
-%        cmd_line_PLD = [cmd_line_PLD,',',num2str(tmp_PLD)];
-%    end
-
-% >>>  NOTE: Do you need to correct for PLD on slice-by-slice basis if
-% slice timing  correction was already performed on the raw data?
-   
-   %% run oxford_asl with partial volume and T2* corrections
-   
-   cd(processdir)
-   
-   disp(' >>Running Oxford_ASL with pvcorr and T2*corr...')
-   eval(['!',fsl,'oxford_asl -i ',[tmp_subj,'_ASL_sub.nii.gz'],' -o ',...
-       [tmp_subj,'_output_cbf'],' -m ',[tmp_subj,'_ASL_meanBrain_mask.nii.gz'],...
-       ' --tis=2.665 --bolus=1.665 --casl -r ',[tmp_subj,'_anat_brain.nii.gz'],...
-       ' --te=10 -c ',m0_file,' --cmethod=voxel ','--alpha=',num2str(0.84),' ',...
-       ' --t2star --echospacing=0.00047 --pvcorr --pvgm=',[tmp_subj,'_anat_brain_pve_1.nii.gz'],...
-       ' --pvwm=',[tmp_subj,'_anat_brain_pve_2.nii.gz']])
-   
-   % perfusion_calib.nii.gz in native space dir is flow map in absolute
-   % units (mL/100g/min)
-   
-   cd(processdir)
-   native_space_path = '/Users/kaden_shearer/Dropbox/kaden_thesis/movie_data/varsity_data/controls/nci.cq.lcf.8/rs/norm/nci.cq.lcf.8_output_cbf/native_space/';
-   copyfile([native_space_path,'perfusion_calib.nii.gz'])
-   eval(['!','mv perfusion_calib.nii.gz ',[tmp_subj,'_ASL_perfusion_map.nii.gz']])
-   
-   %% resample 4d ASL data into 2mm MNI space
-   % use linear and non-linear matricies calculated before for bold data
-   
-   disp(' >> Resampling 4D ASL data into 2 mm MNI space...')
-   
-    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[tmp_subj,'_ASL_sub.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--premat=',[tmp_subj,'_func2struct.mat'],' ','--out=',[tmp_subj,'_ASL_MNI']])
-
-    %% resample ASL perfusion map into 2mm MNI space
-    
-    disp(' >> Resampling ASL perfusion map into 2 mm MNI space...')
-   
-    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[tmp_subj,'_ASL_perfusion_map.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--premat=',[tmp_subj,'_func2struct.mat'],' ','--out=',[tmp_subj,'_ASL_perfusion_map_MNI']])
-
-    %% resample 3D segmented GM, WM, and CSF masks into 2mm MNI space
-    % use concatenated linear and non-linear transformation mat generated
-    % previously in the pipeline
-    
-    disp(' >> Resampling FAST segments into 2 mm MNI space...')
-   
-    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[tmp_subj,'_anat_brain_seg_0.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--out=',[tmp_subj,'_anat_brain_seg_0_MNI.nii.gz']])
-    
-    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[tmp_subj,'_anat_brain_seg_1.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--out=',[tmp_subj,'_anat_brain_seg_1_MNI.nii.gz']])
-
-    eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[tmp_subj,'_anat_brain_seg_2.nii.gz'],' ','--warp=',[tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--out=',[tmp_subj,'_anat_brain_seg_2_MNI.nii.gz']])
-    
-    %% ===== Denoise 4d bold data using fsl_regfilt =====
-    % temporal regression of nuisance parameters such as cardiac/resp noise
-    % and non-neuronally related signal
-    
-    disp(' >> Denoising BOLD data via temporal regression...')
-    
-    % load 4D bold data in registered in MNI space
-    bold_nii = load_untouch_nii([processdir,[tmp_subj,'_BOLD_MNI.nii.gz']]);
-    bold_img = double(bold_nii.img);
-    
-    dyn = size(bold_img,4);
-    
-    % extract global signal (Murphy and Fox, 2017)
-    % mean of the voxel time series within the brain; 
-    bold_avg_ts = make_avg_ts(bold_img);
-    
-    %% mean WM signal
-    % WM and CSF signal is used as a physiological proxy for cardiac/resp noise
-    % since they have minimal contribution to neural activation.
-    % load WM segment
-    
-    disp(' >> Removing cardiac & respiratory artifacts')
-    
-    wm_seg_nii = load_untouch_nii([processdir,[tmp_subj,'_anat_brain_seg_2_MNI.nii.gz']]);
-    wm_seg_img = double(wm_seg_nii.img);
+% BOLD BET
+fprintf('     Running BOLD BET...')
+% initial bet, then edit f and g parameters if required
+eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
+        [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' ','-m'])    
+eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
+    [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
+choice = menu('Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    defvalues = {'0','0.5'};
+    while(1)
+        prompt = {'Enter vertical gradient parameter (g; -1:1):','fractional intensity parameter (f; 0:1):'};
+        dlgtitle = 'Bet Input';
+        dims = [1,75];
+        definput = defvalues;
+        BetInput = inputdlg(prompt,dlgtitle,dims,definput);
+        defvalues = {char(BetInput(1,1)),char(BetInput(2,1))};
         
-    % apply segment to bold data
-    for yy = 1:size(bold_img,4)
-        tmp_vol = bold_img(:,:,:,yy);
-        wm_sig(:,:,:,yy) = tmp_vol.*wm_seg_img;
+        eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
+        [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' ','-m -f ',char(BetInput(2,1)),...
+        ' -g ',char(BetInput(1,1))])
+        
+        eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
+            [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
+        
+        choice = menu('Continue?','Yes','No');
+        if choice==1 || choice==0
+            eval(['!','pkill fsleyes']);
+            break;
+        end
+        eval(['!','pkill fsleyes'])
     end
-    
-    % save it
-    nii_hdr = bold_nii.hdr;
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img=wm_sig; % 4d data
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_BOLD_WM_sig.nii.gz']]);
-    
-    wm_avg_ts = make_avg_ts(wm_sig);
-    
-    %% mean CSF signal
-    % load CSF segment
-    csf_seg_nii = load_untouch_nii([processdir,[tmp_subj,'_anat_brain_seg_0_MNI.nii.gz']]);
-    csf_seg_img = double(csf_seg_nii.img);
-    
-    dyn = size(bold_img,4);
-    
-    % apply segment to bold data
-    for yy = 1:size(bold_img,4)
-        tmp_vol = bold_img(:,:,:,yy);
-        csf_sig(:,:,:,yy) = tmp_vol.*csf_seg_img;
-    end
-    
-    % save it
-    nii_hdr = bold_nii.hdr;
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img=csf_sig; % 4d data
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_BOLD_CSF_sig.nii.gz']]);
-    
-    csf_avg_ts = make_avg_ts(csf_sig);
-    
-    %% extract six rigid-body motion parameters 
-    
-    data = load([rs_path,[tmp_subj,'_BOLD_mcf.par']]);
-    
-    for ii = 2:length(data)
-    % calculate mean displacement
-    mean_displacement(ii,:) = (((data(ii,1)-data(ii-1,1))^2)+...
-        ((data(ii,2)-data(ii-1,2))^2)+((data(ii,3)-data(ii-1,3))^2)...
-        +((data(ii,4)-data(ii-1,4))^2)+((data(ii,5)-data(ii-1,5))^2)+...
-        ((data(ii,6)-data(ii-1,6))^2))^(1/2);  
-    end
-
-    motion_parameters = [data,mean_displacement(:,1)];
-    motion_parameters = num2cell(motion_parameters);
-
-    rotation_data = cell2mat(motion_parameters(:,1:3));
-    translation_data = cell2mat(motion_parameters(:,4:6));
-    mean_disp = cell2mat(motion_parameters(:,7));
-    
-    %% create matrix with time courses of nuisance parameters
-    noise_mat(:,1) = bold_avg_ts;
-    noise_mat(:,2) = wm_avg_ts;
-    noise_mat(:,3) = csf_avg_ts;
-    noise_mat(:,4:6) = translation_data;
-    noise_mat(:,7:9) = rotation_data;
-    
-    % create design matrix as input for fsl_regfilt
-    dlmwrite('bold_regfilt_design.txt',noise_mat,'delimiter',' ');
-    
-    %% use fsl_regfilt to regress out extracted nuisance parameters
-    eval(['!',fsl,'fsl_regfilt -i ',[tmp_subj,'_BOLD_MNI.nii.gz'],...
-        ' -d bold_regfilt_design.txt -f "1,2,3,4,5,6,7,8,9" -o ',...
-        [tmp_subj,'_BOLD_denoised.nii.gz'],' -v'])
-    disp('fsl_regfilt COMPLETE')
-    
-    %% normalize denoised BOLD signal
-    % convert absolute signal to %change in BOLD relative to baseline (avg
-    % of first 10 volumes)
-    
-    image_path = [processdir,[tmp_subj,'_BOLD_denoised.nii.gz']];
-    bsl_range = 1:10;
-    save_dir = processdir;
-    save_name = [tmp_subj,'_BOLD_normalized.nii.gz'];
-    bold_normalized = normalize_signal(image_path,bsl_range,save_dir,save_name);
-    
-     %% check avg signal of denoised data
-%     
-%     denoised_ts = make_avg_ts(bold_normalized);
-%     mni_ts = make_avg_ts(mni_normalized);
-%     
-%     plot(mni_ts,'linewidth',2)
-%     hold on
-%     plot(denoised_ts,'linewidth',2)
-%     set(gca,'fontsize',14)
-%     xlabel('ts volume')
-%     ylabel('avg BOLD signal')
-%     legend('raw BOLD','denoised BOLD')
-
-    %% ===== Denoise 4d asl data using fsl_regfilt =====
-    
-    disp(' >> Denoising ASL data via temporal regression...')
-    
-    % load 4d asl data (resampled into MNI space)
-    asl_nii = load_untouch_nii([processdir,[tmp_subj,'_ASL_MNI.nii.gz']]);
-    asl_img = double(asl_nii.img);
-    
-    dyn = size(asl_img,4);
-    
-    % extract global signal from asl ts
-    asl_avg_ts = make_avg_ts(asl_img);
-    
-    % extract avg wm signal from asl data (seg is the same from MNI)
-    for yy = 1:size(asl_img,4)
-        tmp_vol = asl_img(:,:,:,yy);
-        wm_sig(:,:,:,yy) = tmp_vol.*wm_seg_img;
-    end
-    
-    % save it
-    nii_hdr = asl_nii.hdr;
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img=wm_sig; % 4d data
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_ASL_WM_sig.nii.gz']]);
-    
-    asl_wm_avg_ts = make_avg_ts(wm_sig); % avg wm signal
-
-    % extract avg csf signal from asl data
-    for yy = 1:size(asl_img,4)
-        tmp_vol = asl_img(:,:,:,yy);
-        csf_sig(:,:,:,yy) = tmp_vol.*csf_seg_img;
-    end
-    
-    % save it
-    nii_hdr = asl_nii.hdr;
-    nii_hdr.dime.dim(5)=dyn; % # of volumes
-    img_nii.nii.hdr = nii_hdr;
-    img_nii.nii.img=csf_sig; % 4d data
-    save_nii(img_nii.nii,[processdir,[tmp_subj,'_ASL_CSF_sig.nii.gz']]);
-    
-    asl_csf_avg_ts = make_avg_ts(csf_sig); % avg csf signal 
-    
-    % rigid-body motion parameters same as bold data
-    
-    % create matrix with time courses of nuisance parameters
-    asl_noise_mat(:,1) = asl_avg_ts;
-    asl_noise_mat(:,2) = asl_wm_avg_ts;
-    asl_noise_mat(:,3) = asl_csf_avg_ts;
-    asl_noise_mat(:,4:6) = translation_data;
-    asl_noise_mat(:,7:9) = rotation_data;
-    
-    % create design matrix as input for fsl_regfilt
-    dlmwrite('asl_regfilt_design.txt',asl_noise_mat,'delimiter',' ');
-    
-    % use fsl_regfilt to regress out extracted nuisance parameters
-    eval(['!',fsl,'fsl_regfilt -i ',[tmp_subj,'_ASL_MNI.nii.gz'],...
-        ' -d asl_regfilt_design.txt -f "1,2,3,4,5,6,7,8,9" -o ',...
-        [tmp_subj,'_ASL_denoised.nii.gz'],' -v'])
-    disp('fsl_regfilt COMPLETE')
-    
-    %% normalize the asl signal
-    
-    image_path = [processdir,[tmp_subj,'_ASL_denoised.nii.gz']];
-    bsl_range = 1:10;
-    save_dir = processdir;
-    save_name = [tmp_subj,'_ASL_normalized.nii.gz'];
-    asl_normalized = normalize_signal(image_path,bsl_range,save_dir,save_name);
-    
-    %% calculate mean displacement for 4d data
-    
-    disp(' >>Calculating mean displacement of 4d data...')
-    
-    % calculate mean displacement for bold data
-    bold_motion = load([rs_path,[tmp_subj,'_BOLD_mcf.par']]);
-    for ii = 2:length(bold_motion)
-    % calculate mean displacement
-    bold_mean_displacement(ii,:) = (((bold_motion(ii,1)-bold_motion(ii-1,1))^2)+...
-        ((bold_motion(ii,2)-bold_motion(ii-1,2))^2)+((bold_motion(ii,3)-bold_motion(ii-1,3))^2)...
-        +((bold_motion(ii,4)-bold_motion(ii-1,4))^2)+((bold_motion(ii,5)-bold_motion(ii-1,5))^2)+...
-        ((bold_motion(ii,6)-bold_motion(ii-1,6))^2))^(1/2);  
-    end
-    
-    % calculate mean displacment for asl data
-    asl_motion = load([rs_path,[tmp_subj,'_ASL_mcf.par']]);
-    for ii = 2:length(asl_motion)
-    % calculate mean displacement
-    asl_mean_displacement(ii,:) = (((asl_motion(ii,1)-asl_motion(ii-1,1))^2)+...
-        ((asl_motion(ii,2)-asl_motion(ii-1,2))^2)+((asl_motion(ii,3)-asl_motion(ii-1,3))^2)...
-        +((asl_motion(ii,4)-asl_motion(ii-1,4))^2)+((asl_motion(ii,5)-asl_motion(ii-1,5))^2)+...
-        ((asl_motion(ii,6)-asl_motion(ii-1,6))^2))^(1/2);
-    end
-    
-%     figure('Name','BOLD Mean Displacement','NumberTitle','off')
-%     plot(bold_mean_displacement,'linewidth',2);
-%     title('BOLD Mean Displacement');
-%     xlabel('Volume');
-%     ylabel('Mean Displacement (mm)');
-%     yline(0,'--');
-%     legend({'mean displacement'},'location','northwest');
-%     legend boxoff
-%     set(gca,'fontsize',20)
-%     
-%     figure('Name','ASL Mean Displacement','NumberTitle','off')
-%     plot(asl_mean_displacement,'linewidth',2);
-%     title('ASL Mean Displacement');
-%     xlabel('Volume');
-%     ylabel('Mean Displacement (mm)');
-%     yline(0,'--');
-%     legend({'mean displacement'},'location','northwest');
-%     legend boxoff
-%     set(gca,'fontsize',20)
-      
-      %% === bold volume censoring (mean displacement > 0.2 mm) ===
-      
-      disp(' >>Volume censoring bold data (> 0.2mm displacement)')
-      
-      % censor out bold volumes with displacement > 0.2 mm
-      bold_censor_locs = find(bold_mean_displacement > 0.2);
-      
-      counter = 1;
-      
-      for tt = 1:length(bold_normalized)
-          tmp_vol = bold_normalized(:,:,:,tt);
-          censor = sum(tt == bold_censor_locs);
-          if censor == 0
-              bold_censored_vols(:,:,:,counter) = tmp_vol;
-              counter = counter + 1; 
-          end
-      end
-      
-      tmp_nii = load_untouch_nii([processdir,[tmp_subj,'_BOLD_normalized.nii.gz']]);
-      dyn = size(bold_censored_vols,4);
-      
-      nii_hdr = tmp_nii.hdr;
-      nii_hdr.dime.dim(5)=dyn; % # of volumes
-      img_nii.nii.hdr = nii_hdr;
-      img_nii.nii.img=bold_censored_vols; % 4d data
-      save_nii(img_nii.nii,[processdir,[tmp_subj,'_BOLD_volcensored.nii.gz']]);
-      
-       %% === asl volume censoring (mean displacement > 0.2 mm) ===
-      
-      disp(' >>Volume censoring asl data (> 0.2mm displacement)')
-      
-      % censor out bold volumes with displacement > 0.2 mm
-      asl_censor_locs = find(asl_mean_displacement > 0.2);
-      
-      counter = 1;
-      
-      for tt = 1:length(asl_normalized)
-          tmp_vol = asl_normalized(:,:,:,tt);
-          censor = sum(tt == asl_censor_locs);
-          if censor == 0
-              asl_censored_vols(:,:,:,counter) = tmp_vol;
-              counter = counter + 1; 
-          end
-      end
-      
-      tmp_nii = load_untouch_nii([processdir,[tmp_subj,'_ASL_normalized.nii.gz']]);
-      dyn = size(asl_censored_vols,4);
-      
-      nii_hdr = tmp_nii.hdr;
-      nii_hdr.dime.dim(5)=dyn; % # of volumes
-      img_nii.nii.hdr = nii_hdr;
-      img_nii.nii.img=asl_censored_vols; % 4d data
-      save_nii(img_nii.nii,[processdir,[tmp_subj,'_ASL_volcensored.nii.gz']]);
-      
-      %% smooth bold dataset
-      % use 6mm full width at half-maximum (FWHM) Gaussian kernel.
-      
-      
-    
 end
 
-disp(' ')
-disp('COMPLETE')
+eval(['!','pkill fsleyes'])
+fprintf('complete'); disp(' ')
+   
+% ASL BET
+fprintf('     Running ASL BET...')
+
+eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
+        [processdir,tmp_subj,'_ASL_meanBrain.nii.gz'],' ','-m'])
+    
+eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
+    [processdir,tmp_subj,'_ASL_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
+
+choice = menu('Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    defvalues = {'0','0.5'};
+    while(1)
+        prompt = {'Enter vertical gradient parameter (g; -1:1):','fractional intensity parameter (f; 0:1):'};
+        dlgtitle = 'Bet Input';
+        dims = [1,75];
+        definput = defvalues;
+        BetInput = inputdlg(prompt,dlgtitle,dims,definput);
+        defvalues = {char(BetInput(1,1)),char(BetInput(2,1))};
+        
+        eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
+        [processdir,tmp_subj,'_ASL_meanBrain.nii.gz'],' ','-m -f ',char(BetInput(2,1)),...
+        ' -g ',char(BetInput(1,1))])
+        
+        eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
+            [processdir,tmp_subj,'_ASL_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
+        
+        choice = menu('Continue?','Yes','No');
+        if choice==1 || choice==0
+            eval(['!','pkill fsleyes']);
+            break;
+        end
+        eval(['!','pkill fsleyes'])
+    end
+end
+
+eval(['!','pkill fsleyes'])
+fprintf('complete'); disp(' ')
+    
+    
+fprintf('Brain extraction complete'); disp(' ');
+
+% extract 4D time series
+fprintf('   Extracting 4D betted time series...');
+
+% extract bold ts
+bold_data = load_image([processdir,tmp_subj,'_BOLD_mcf.nii.gz']);
+mask_data = single(load_image([processdir,tmp_subj,'_BOLD_meanBrain_mask.nii.gz']));
+clear bold_ts
+for jj = 1:size(bold_data,4)
+    tmp_vol = bold_data(:,:,:,jj);
+    bet_vol = tmp_vol.*mask_data;
+    bold_ts(:,:,:,jj) = bet_vol;
+end
+save_image([processdir,tmp_subj,'_BOLD_mcf.nii.gz'],bold_ts,[processdir,tmp_subj,'_BOLD_ts.nii.gz'])
+
+% extract asl ts
+asl_data = load_image([processdir,tmp_subj,'_ASL_mcf.nii.gz']);
+mask_data = single(load_image([processdir,tmp_subj,'_ASL_meanBrain_mask.nii.gz']));
+clear asl_ts
+for jj = 1:size(asl_data,4)
+    tmp_vol = asl_data(:,:,:,jj);
+    bet_vol = tmp_vol.*mask_data;
+    asl_ts(:,:,:,jj) = bet_vol;
+end
+save_image([processdir,tmp_subj,'_ASL_mcf.nii.gz'],asl_ts,[processdir,tmp_subj,'_ASL_ts.nii.gz'])
+
+fprintf('complete'); disp(' ');
+
+%% =================== BOLD Signal Reconstruction ========================
+disp('.........................................................')
+disp(' '); disp(['Initiating BOLD signal reconstruction for ',tmp_subj]); disp(' ');
+
+%% Window average BOLD data
+% uses sliding window average - finds mean b/w control & label volumes
+
+msg = sprintf('Window averaging BOLD ts...'); n=numel(msg); fprintf(msg)
+bold_window_avg = window_average([processdir,tmp_subj,'_BOLD_ts.nii.gz'],...
+    [processdir,tmp_subj,'_BOLD_window_avg.nii.gz']);
+fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
+
+%% Co-Registration and Transformation into 2mm MNI Space
+
+disp('Transforming BOLD data into 2mm MNI space...');
+
+% bet T1 anatomical image
+fprintf('  Brain extracting structural image...'); disp(' ');
+anatdir = [subj_path,tmp_subj,'/anat/'];
+t1_img = dir([anatdir,'co*']).name;
+
+eval(['!',fsl,'bet ',[anatdir,t1_img],' ',[processdir,tmp_subj,'_anat_bet.nii.gz']])
+
+eval(['!',fsl,'fsleyes ',[anatdir,t1_img],' ',...
+    [processdir,tmp_subj,'_anat_bet.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
+
+choice = menu('Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    defvalues = {'0','0.5'};
+while(1)
+prompt = {'Enter vertical gradient parameter (g; -1:1):','fractional intensity parameter (f; 0:1):'};
+dlgtitle = 'Bet Input';
+dims = [1,75];
+definput = defvalues;
+disp('f (0:1) - default=0.5; smaller values give larger brain outline estimates')
+disp('g (-1:1) - default=0; positive values give larger brain outline at bottom, smaller at top')
+BetInput = inputdlg(prompt,dlgtitle,dims,definput);
+defvalues = {char(BetInput(1,1)),char(BetInput(2,1))};
+
+fprintf('  Brain extracting structural image...')
+anatdir = [subj_path,tmp_subj,'/anat/'];
+t1_img = dir([anatdir,'co*']).name;
+eval(['!',fsl,'bet ',[anatdir,t1_img],' ',[processdir,tmp_subj,'_anat_bet.nii.gz'],...
+    ' -f ',char(BetInput(2,1)),' -g ',char(BetInput(1,1))])
+fprintf('complete'); disp(' ');
+
+eval(['!',fsl,'fsleyes ',[anatdir,t1_img],' ',[processdir,tmp_subj,'_anat_bet.nii.gz --cmap blue-lightblue --alpha 50 &']])
+
+choice = menu('Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+   break;
+end
+
+eval(['!','pkill fsleyes'])
+
+end
+end
+
+% fast segment structural image
+fprintf('  Running FAST segmentation...')
+eval(['!',fsl,'fast --segments ',[anatdir,t1_img]])
+fprintf('complete'); disp(' ');
+
+% co-registration of EPI data to structural image - use mean BOLD img for
+% input
+fprintf('  Co-registering BOLD EPI data to structural image...'); disp(' ');
+eval(['!',fsl,'epi_reg --wmseg=',[anatdir,tmp_subj,'_anat_brain_seg_2.nii.gz'],...
+    ' --echospacing=0.00047 --pedir=-y --epi=',[processdir,tmp_subj,'_BOLD_meanBrain.nii.gz']...
+    ' --t1=',[anatdir,t1_img],' --t1brain=',[anatdir,tmp_subj,'_anat_brain.nii.gz'],...
+    ' --out=',[processdir,tmp_subj,'_BOLD_epi2struct']])
+fprintf('complete'); disp(' ');
+
+% linear registration of T1 image to MNI space
+fprintf('  Running FLIRT...');
+eval(['!',fsl,'flirt -ref $FSLDIR/data/standard/MNI152_T1_2mm_brain -in ',...
+    [anatdir,tmp_subj,'_anat_brain.nii.gz'],' -omat ',...
+    [processdir,tmp_subj,'_T1_2_MNI.mat']])
+fprintf('complete'); disp(' ');
+
+% non-linear registration of T1 image to MNI space
+fprintf('  Running FNIRT...');
+eval(['!',fsl,'fnirt --in=',[anatdir,t1_img],' --aff=',[processdir,tmp_subj,'_T1_2_MNI.mat'],...
+    ' --cout=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],' --config=T1_2_MNI152_2mm'])
+fprintf('complete'); disp(' ');
+
+% apply transformation matricies to 4D func data
+fprintf('  Applying transformation matricies to BOLD data...');
+eval(['!',fsl,'applywarp --ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain --in=',...
+    [processdir,tmp_subj,'_BOLD_window_avg.nii.gz'],' --warp=',...
+    [processdir,tmp_subj,'_T1_2_MNI_nonlinear'],' --premat=',...
+    [processdir,tmp_subj,'_BOLD_epi2struct.mat'],' --out=',...
+    [processdir,tmp_subj,'_BOLD_MNI']])
+fprintf('complete'); disp(' ');
+
+%% =================== ASL Signal Reconstruction ========================
+disp('.........................................................')
+disp(' '); disp(['Initiating ASL signal reconstruction for ',tmp_subj]); disp(' ');
+
+%% Run surround subtraction on ASL ts
+% difference between each image and the average of its 2 nearest
+% neighbours is formed - reduces transient artifacts of BOLD weighting
+% computes difference vols
+ 
+image = [processdir,tmp_subj,'_ASL_ts.nii.gz'];
+save_dir = processdir;
+save_name = [tmp_subj,'_ASL_sub.nii.gz'];
+asl_diff_vols = surround_subtraction(image,save_dir,save_name);
+
+%% varying PLD corrections
+% each slice in the data will have a difference PLD due to the 2D EPI
+% readout 
+% PLDslice(s) = 1 + (0.0538)*(slice-1)
+% baseline PLD is 1 sec
+
+% NEED TO CORRECT - OXFORD_ASL WILL NOT ACCEPT COMMA SEPARATED LIST
+% number of entries needs to equal the number of label and control pairs??
+
+% bolus = 1.665;
+% 
+% % create PLD array
+% for xx = 1:2:length(asl_diff_vols)
+%     PLD(xx) = 1 + (0.0538*(xx-1));
+% end
+% 
+% tis_delay = PLD + bolus;
+% 
+% tis_str = sprintf('%0f,' , tis_delay); % prints output to comma separated  list
+% tis_str = tis_str(1:end-1); % strip final comma
+
+% use tis_str as input for --tis option in oxford_asl
+%% Compute voxelwise CBF0 map
+%  index of vascular tension with partial volume and T2* corrections
+%  (Chappell 2009/11)
+
+% path to m0 image
+m0dir = [subj_path,tmp_subj,'/m0/norm/'];
+m0_file = dir([m0dir,'*nii.gz']).name;
+m0_img = [m0dir,m0_file];
+
+% run oxford_asl w/ partial volume  and T2* corrections - creates voxelwise
+% cbf map in absolute units (mL/100g/min )
+disp('Computing voxelwise CBF perfusion map')
+fprintf('  Running Oxford_ASL...'); disp(' ');
+eval(['!',fsl,'oxford_asl -i ',[processdir,tmp_subj,'_ASL_sub.nii.gz'],' -o ',...
+       [processdir,tmp_subj,'_output_cbf'],' -m ',[processdir,tmp_subj,'_ASL_meanBrain_mask.nii.gz'],...
+       ' --tis=2.665',' --bolus=1.665 --casl -r ',[anatdir,tmp_subj,'_anat_brain.nii.gz'],...
+       ' --te=10 -c ',m0_img,' --cmethod=voxel ','--alpha=',num2str(0.84),' ',...
+       ' --t2star --echospacing=0.00047 --pvcorr --pvgm=',[anatdir,tmp_subj,'_anat_brain_pve_1.nii.gz'],...
+       ' --pvwm=',[anatdir,tmp_subj,'_anat_brain_pve_2.nii.gz']])
+fprintf('complete'); disp(' ');
+
+% move absolute perfusion map into processdir
+fprintf('  Generating ASL perfusion map...')
+nativespacedir = [processdir,[tmp_subj,'_output_cbf'],'/native_space/'];
+eval(['!','cp ',[nativespacedir,'perfusion_calib.nii.gz'],' ',processdir])
+eval(['!','mv ',[processdir,'perfusion_calib.nii.gz'],' ',[processdir,tmp_subj,'_ASL_perfusion_map.nii.gz']])
+fprintf('complete'); disp(' ');
+
+%% Resample ASL data into 2mm MNI space
+% use linear and nonlinear matricies generated in previous steps for bold
+% data
+
+disp('Resampling ASL data into 2mm MNI space...')
+
+% resample 4D ASL data into MNI
+fprintf('  Resampling 4D ASL data...')
+eval(['!',fsl,'applywarp --ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain --in=',...
+    [processdir,tmp_subj,'_ASL_sub.nii.gz'],' --warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' --premat=',[processdir,tmp_subj,'_BOLD_epi2struct.mat'],' --out=',[processdir,tmp_subj,'_ASL_MNI']])
+fprintf('complete'); disp(' ');
+
+% resample perfusion map into MNI
+fprintf('  Resampling ASL perfusion map...')
+eval(['!',fsl,'applywarp --ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain --in=',...
+    [processdir,tmp_subj,'_ASL_perfusion_map.nii.gz'],' --warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' --premat=',[processdir,tmp_subj,'_BOLD_epi2struct.mat'],' --out=',[processdir,tmp_subj,'_ASL_perfusion_map_MNI']])
+fprintf('complete'); disp(' ');
+
+%  resample segmented tissue masks into MNI
+fprintf('  Resampling segmented tissue masks...')
+eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
+    '--in=',[anatdir,tmp_subj,'_anat_brain_seg_0.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--out=',[processdir,tmp_subj,'_anat_brain_seg_0_MNI.nii.gz']])
+    
+eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
+    '--in=',[anatdir,tmp_subj,'_anat_brain_seg_1.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--out=',[processdir,tmp_subj,'_anat_brain_seg_1_MNI.nii.gz']])
+
+eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
+    '--in=',[anatdir,tmp_subj,'_anat_brain_seg_2.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--out=',[processdir,tmp_subj,'_anat_brain_seg_2_MNI.nii.gz']])
+fprintf('complete'); disp(' ');
+
+disp('Resampling complete.')
+
+%% =================== BOLD Signal Preprocessing ========================
+
+disp('.........................................................'); disp(' '); 
+disp(['Initiating Pre-processing for ',tmp_subj]); disp(' ');
+
+%% Denoise BOLD data using temporal regression
+% use fsl_regfilt to regress out nuisance parameters (i.e. cardiac/resp
+% noise, non-neuronally related signal from motion, global signal).
+
+disp('Denoising BOLD data via temporal regression...')
+
+% extract WM signal
+fprintf('  Extracting WM signal...')
+image = [processdir,tmp_subj,'_BOLD_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_brain_seg_2_MNI.nii.gz'];
+save_dir = processdir;
+save_name = [tmp_subj,'_BOLD_WM_sig.nii.gz'];
+[wm_sig,wm_ts] = apply_mask(image,mask_image,save_dir,save_name);
+fprintf('complete'); disp(' ');
+
+% extract CSF signal
+fprintf('  Extracting CSF signal...')
+image = [processdir,tmp_subj,'_BOLD_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_brain_seg_0_MNI.nii.gz'];
+save_dir = processdir;
+save_name = [tmp_subj,'_BOLD_CSF_sig.nii.gz'];
+[csf_sig,csf_ts] = apply_mask(image,mask_image,save_dir,save_name);
+fprintf('complete'); disp(' ');
+
+% extract rigid-body motion parameters
+fprintf('  Extracting rigid-body motion parameters...')
+bold_motion = load([processdir,tmp_subj,'_BOLD_mcf.par']);
+fprintf('complete'); disp(' ');
+
+% create design matrix for fsl_regfilt
+fprintf('  Creating GLM design matrix...')
+bold_noise(:,1) = wm_ts;
+bold_noise(:,2) = csf_ts;
+bold_noise(:,3:8) = bold_motion;
+dlmwrite('bold_regfilt_design.txt',bold_noise,'delimiter',' ');
+fprintf('complete'); disp(' ');
+
+% regress out nuisance parameters
+fprintf('  Running fsl_regfilt...')
+ eval(['!',fsl,'fsl_regfilt -i ',[processdir,tmp_subj,'_BOLD_MNI.nii.gz'],...
+        ' -d bold_regfilt_design.txt -f "1,2,3,4,5,6,7,8" -o ',...
+        [processdir,tmp_subj,'_BOLD_denoised.nii.gz']])
+fprintf('complete'); disp(' ');
+
+%% Denoise ASL data using temporal regression
+
+disp('Denoising ASL data via temporal regression...')
+
+% WM and CSF segments used as ROI for physiological noise, since neuronal
+% activity in these regions is minimal
+
+% extract WM signal
+fprintf('  Extracting WM signal...')
+image = [processdir,tmp_subj,'_ASL_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_brain_seg_2_MNI.nii.gz'];
+save_dir = processdir;
+save_name = [tmp_subj,'_ASL_WM_sig.nii.gz'];
+[wm_sig,wm_ts] = apply_mask(image,mask_image,save_dir,save_name);
+fprintf('complete'); disp(' ');
+
+% extract CSF signal
+fprintf('  Extracting CSF signal...')
+image = [processdir,tmp_subj,'_ASL_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_brain_seg_0_MNI.nii.gz'];
+save_dir = processdir;
+save_name = [tmp_subj,'_ASL_CSF_sig.nii.gz'];
+[csf_sig,csf_ts] = apply_mask(image,mask_image,save_dir,save_name);
+fprintf('complete'); disp(' ');
+
+% extract rigid-body motion parameters
+fprintf('  Extracting rigid-body motion parameters...')
+asl_motion = load([processdir,tmp_subj,'_ASL_mcf.par']);
+fprintf('complete'); disp(' ');
+
+% create design matrix for fsl_regfilt
+fprintf('  Creating GLM design matrix...')
+asl_noise(:,1) = wm_ts;
+asl_noise(:,2) = csf_ts;
+asl_noise(:,3:8) = asl_motion;
+dlmwrite('asl_regfilt_design.txt',asl_noise,'delimiter',' ');
+fprintf('complete'); disp(' ');
+
+% regress out nuisance parameters
+fprintf('  Running fsl_regfilt...')
+ eval(['!',fsl,'fsl_regfilt -i ',[processdir,tmp_subj,'_ASL_MNI.nii.gz'],...
+        ' -d asl_regfilt_design.txt -f "1,2,3,4,5,6,7,8" -o ',...
+        [processdir,tmp_subj,'_ASL_denoised.nii.gz']])
+fprintf('complete'); disp(' ');
+
+%% Volume censoring (both bold and asl)
+% remove any bold volumes with mean displacement >0.2mm - extract the same
+% volumes from the asl data so the ts remain aligned.
+
+disp('Running volume censoring (thresh=0.2mm)...')
+
+% calculate mean displacement for bold data
+bold_motion = load([processdir,tmp_subj,'_BOLD_mcf.par']);
+fprintf('  Computing mean displacement...')
+for aa = 2:length(bold_motion)
+% calculate mean displacement
+bold_mean_displacement(aa,:) = (((bold_motion(aa,1)-bold_motion(aa-1,1))^2)+...
+((bold_motion(aa,2)-bold_motion(aa-1,2))^2)+((bold_motion(aa,3)-bold_motion(aa-1,3))^2)...
++((bold_motion(aa,4)-bold_motion(aa-1,4))^2)+((bold_motion(aa,5)-bold_motion(aa-1,5))^2)+...
+((bold_motion(aa,6)-bold_motion(aa-1,6))^2))^(1/2);  
+end
+fprintf('complete'); disp(' ');
+
+fprintf('  Volume censoring BOLD data...')
+bold_data = load_image([processdir,tmp_subj,'_BOLD_denoised.nii.gz']);
+censor_locs = find(bold_mean_displacement > 0.2);
+counter = 1;
+for tt = 1:size(bold_data,4)
+    tmp_vol = bold_data(:,:,:,tt);
+    censor = sum(tt == censor_locs);
+    if censor == 0
+       bold_censored_vols(:,:,:,counter) = tmp_vol;
+       counter = counter + 1; 
+    end
+end
+fprintf('complete'); disp(' ');
+
+save_image([processdir,tmp_subj,'_BOLD_denoised.nii.gz'],bold_censored_vols,...
+    [processdir,tmp_subj,'_BOLD_volcensored.nii.gz'])
+
+fprintf('  Volume censoring ASL data...')
+asl_data = load_image([processdir,tmp_subj,'_ASL_denoised.nii.gz']);
+censor_locs = find(bold_mean_displacement > 0.2);
+counter = 1;
+for tt = 1:size(asl_data,4)
+    tmp_vol = asl_data(:,:,:,tt);
+    censor = sum(tt == censor_locs);
+    if censor == 0
+       asl_censored_vols(:,:,:,counter) = tmp_vol;
+       counter = counter + 1; 
+    end
+end
+fprintf('complete'); disp(' ');
+
+save_image([processdir,tmp_subj,'_ASL_denoised.nii.gz'],asl_censored_vols,...
+    [processdir,tmp_subj,'_ASL_volcensored.nii.gz'])
+
+disp('Volume censoring complete.')
+
+%% Smooth 4D data
+% use 6mm full width at half-maximum (FWHM) Gaussian kernel.
+disp('Smoothing 4D Data')
+
+% BOLD data
+fprintf('  Smoothing BOLD ts...')
+smoothing_mm = 6;
+constant_fsl = 2.3548; %FWHM (in mm) divide by 2.3548 to get sigma
+sigma = smoothing_mm/constant_fsl;
+eval(['!',fsl,'fslmaths ',[tmp_subj,'_BOLD_volcensored.nii.gz'],...
+   ' -kernel gauss ',num2str(sigma),' -fmean ',[tmp_subj,'_BOLD_smoothed.nii.gz']])
+fprintf('complete.'); disp(' ');
+
+% ASL data
+fprintf('  Smoothing ASL ts...')
+smoothing_mm = 6;
+constant_fsl = 2.3548; %FWHM (in mm) divide by 2.3548 to get sigma
+sigma = smoothing_mm/constant_fsl;
+eval(['!',fsl,'fslmaths ',[tmp_subj,'_ASL_volcensored.nii.gz'],...
+   ' -kernel gauss ',num2str(sigma),' -fmean ',[tmp_subj,'_ASL_smoothed.nii.gz']])
+fprintf('complete.'); disp(' ');
+
+%% create mask in 2mm MNI
+% required in next step for temporal filtering of 4D data
+fprintf('Creating brain mask in 2mm MNI...');
+file_path = [processdir,[tmp_subj,'_BOLD_MNI.nii.gz']];
+save_dir = processdir;
+save_name = [tmp_subj,'_MNI_2mm_mask.nii.gz'];
+mask_data = create_mask(file_path,save_dir,save_name);
+fprintf('complete.');  disp(' ');
+
+%% Low pass filter bold data
+% removes potential linear drift from scanner aquisition and perfusion
+% weighting
+% Neuronal signal , in general, will be below 0.15Hz - most of the higher frequency components are therefore noise.
+% Filter at 1/2 nyquist frequency (1/4TR - Tak 2014) TR  = 4s
+
+fprintf('Low-pass filtering BOLD signal (1/4*TR)...');
+TR = 4; 
+clear top bottom
+bottom=0;
+top = 1/(4*TR); % tak 2014
+
+eval(['!',afni,'3dBandpass -mask ',[processdir,tmp_subj,'_MNI_2mm_mask.nii.gz'],...
+     ' -overwrite -band ',num2str(bottom),' ',num2str(top),' -prefix ',...
+     [processdir,tmp_subj,'_BOLD_lowpass'],' ',[processdir,tmp_subj,'_BOLD_smoothed.nii.gz']])
+eval(['!',afni,'3dAFNItoNIFTI -overwrite -prefix ',[processdir,tmp_subj,'_BOLD_lowpass.nii.gz'],...
+     ' ',[processdir,tmp_subj,'_BOLD_lowpass+*']])
+eval(['!','rm ',[processdir,tmp_subj,'_BOLD_lowpass+*']])
+fprintf('complete.'); disp(' ');
+
+%% High pass filter ASL data
+% removes T2* weighting from the bold contamination effect
+% cuttoff frequency 1/4TR
+
+fprintf('High-pass filtering ASL signal (1/4*TR)...');
+TR = 4;
+clear top bottom
+bottom=1/(4*TR); % tak 2014
+top = 999; % tak 2014    
+eval(['!',afni,'3dBandpass -mask ',[processdir,tmp_subj,'_MNI_2mm_mask.nii.gz'],...
+    ' -overwrite -band ',num2str(bottom),'  ',num2str(top),...
+    ' -prefix ',[processdir,tmp_subj,'_ASL_highpass'],' ',[processdir,tmp_subj,'_ASL_smoothed.nii.gz']]) 
+eval(['!',afni,'3dAFNItoNIFTI -overwrite -prefix ',[processdir,tmp_subj,'_ASL_highpass.nii.gz'],...
+    ' ',[processdir,tmp_subj,'_ASL_highpass+*']])
+eval(['!','rm ',[processdir,tmp_subj,'_ASL_highpass+*']])
+fprintf('complete.'); disp(' ');
+
+%% Demodulate high pass filtered asl data
+% multiply each frame by cos[pi*n], where n denotes the volume number
+% further attenuates BOLD contamination to accuratley estimate dynamic
+% CBF changes
+
+fprintf('Running demodulation for ASL data...');
+tmp_img = load_image([processdir,tmp_subj,'_ASL_highpass.nii.gz']);
+dyn = size(tmp_img,4);
+
+ n = 0;
+    for ii = 1:size(tmp_img,4)
+        tmp_vol = tmp_img(:,:,:,ii);
+        tmp_demod = arrayfun(@(x) x*cos(pi*ii),tmp_vol);
+        demodulated_ts(:,:,:,ii) = tmp_demod;
+        % progress update
+        msg = sprintf('Processed %d/%d',ii,size(tmp_img,4));
+        fprintf(repmat('\b',1,n));
+        fprintf(msg);
+        n=numel(msg);
+    end
+
+hdr_file = [processdir,tmp_subj,'_ASL_highpass.nii.gz'];
+data  = demodulated_ts;
+save_dir = [processdir,tmp_subj,'_ASL_demodulated.nii.gz'];
+save_image(hdr_file,data,save_dir)
+fprintf('...complete.'); disp(' ');
+
+
+%% notes
+
+% need to go back and figure out varied PLD - --tis option in oxford asl
+
+% check how pre-processing will differ for the movie data!
+
+% run melodic for rs and movie data - use generated ICAs on both datasets
+% and see if there is a correlation
+
+
+%% fsleyes
+
+% eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_denoised.nii.gz'],' &'])
+
+%% workspace visualize signals
+% % 
+% close all
+% set(0,'DefaultFigureWindowStyle','docked');
+% 
+% plot1 = [processdir,tmp_subj,'_BOLD_lowpass.nii.gz'];
+% label1 = char(extractAfter(plot1,'norm/'));
+% plot2 = [processdir,tmp_subj,'_ASL_demodulated.nii.gz'];
+% label2 = char(extractAfter(plot2,'norm/'));
+% % plot3 = [processdir,tmp_subj,'_BOLD_window_avg.nii.gz'];
+% % label3 = char(extractAfter(plot3,'norm/'));
+% 
+% figure('name',label1,'numbertitle','off')
+% plot_image_ts(plot1)
+% title(label1,'interpreter','none')
+% 
+% figure('name',label2,'numbertitle','off')
+% plot_image_ts(plot2)
+% title(label2,'interpreter','none')
+
+
+end
+
+disp(' '); disp('PREPROCESSING COMPLETE FOR ALL SUBJECTS')
