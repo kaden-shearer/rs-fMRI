@@ -18,7 +18,7 @@ subj_dir = dir([subj_path,'n*']);
 
 %% ========================= RS Pre-Processing =============================
 
-for ii = 1%1:length(subj_dir)
+for ii = 2%1:length(subj_dir)
     
 close all
 clc
@@ -113,7 +113,7 @@ fprintf('complete'); disp(' ');
 % brain extract mean images, create binary masks
 fprintf('   Running BET brain extraction...'); disp(' ');
 
-% BOLD BET
+%% BOLD BET
 fprintf('     Running BOLD BET...')
 % initial bet, then edit f and g parameters if required
 eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
@@ -141,7 +141,7 @@ elseif choice==2
         eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
             [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
         
-        choice = menu('Continue?','Yes','No');
+        choice = menu('Assess BET Quality. Continue?','Yes','No');
         if choice==1 || choice==0
             eval(['!','pkill fsleyes']);
             break;
@@ -153,7 +153,7 @@ end
 eval(['!','pkill fsleyes'])
 fprintf('complete'); disp(' ')
    
-% ASL BET
+%% ASL BET
 fprintf('     Running ASL BET...')
 
 eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
@@ -183,7 +183,7 @@ elseif choice==2
         eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
             [processdir,tmp_subj,'_ASL_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
         
-        choice = menu('Continue?','Yes','No');
+        choice = menu('Assess BET Quality. Continue?','Yes','No');
         if choice==1 || choice==0
             eval(['!','pkill fsleyes']);
             break;
@@ -276,7 +276,7 @@ fprintf('complete'); disp(' ');
 
 eval(['!',fsl,'fsleyes ',[anatdir,t1_img],' ',[processdir,tmp_subj,'_anat_bet.nii.gz --cmap blue-lightblue --alpha 50 &']])
 
-choice = menu('Continue?','Yes','No');
+choice = menu('Assess BET Quality. Continue?','Yes','No');
 if choice==1 || choice==0
    eval(['!','pkill fsleyes'])
    break;
@@ -287,32 +287,63 @@ eval(['!','pkill fsleyes'])
 end
 end
 
-% fast segment structural image
+%% fast segment structural image
 fprintf('  Running FAST segmentation...')
-eval(['!',fsl,'fast --segments ',[anatdir,t1_img]])
+eval(['!',fsl,'fast --segments ',[processdir,tmp_subj,'_anat_bet.nii.gz']])
 fprintf('complete'); disp(' ');
 
-% co-registration of EPI data to structural image - use mean BOLD img for
+% check segments
+eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_anat_bet.nii.gz'],' ',[processdir,tmp_subj,'_anat_bet_seg_0.nii.gz'],...
+    ' --cmap blue-lightblue --alpha 50 '...
+    [processdir,tmp_subj,'_anat_bet_seg_1.nii.gz'],' --cmap green --alpha 50 ',...
+    [processdir,tmp_subj,'_anat_bet_seg_2.nii.gz'],' --cmap red-yellow --alpha 50 ','&'])
+
+choice = menu('Assess Segmentation Quality. Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    disp('FAST SEGMENTATION ERROR')
+    return
+end
+
+%% co-registration of EPI data to structural image - use mean BOLD img for
 % input
 fprintf('  Co-registering BOLD EPI data to structural image...'); disp(' ');
-eval(['!',fsl,'epi_reg --wmseg=',[anatdir,tmp_subj,'_anat_brain_seg_2.nii.gz'],...
+eval(['!',fsl,'epi_reg --wmseg=',[processdir,tmp_subj,'_anat_bet_seg_2.nii.gz'],...
     ' --echospacing=0.00047 --pedir=-y --epi=',[processdir,tmp_subj,'_BOLD_meanBrain.nii.gz']...
-    ' --t1=',[anatdir,t1_img],' --t1brain=',[anatdir,tmp_subj,'_anat_brain.nii.gz'],...
+    ' --t1=',[anatdir,t1_img],' --t1brain=',[processdir,tmp_subj,'_anat_bet.nii.gz'],...
     ' --out=',[processdir,tmp_subj,'_BOLD_epi2struct']])
 fprintf('complete'); disp(' ');
+
+if ~isfile([processdir,tmp_subj,'_BOLD_epi2struct.mat'])
+    disp('ERROR: epi_reg file does not exist')
+    return
+end
 
 % linear registration of T1 image to MNI space
 fprintf('  Running FLIRT...');
 eval(['!',fsl,'flirt -ref $FSLDIR/data/standard/MNI152_T1_2mm_brain -in ',...
-    [anatdir,tmp_subj,'_anat_brain.nii.gz'],' -omat ',...
+    [processdir,tmp_subj,'_anat_bet.nii.gz'],' -omat ',...
     [processdir,tmp_subj,'_T1_2_MNI.mat']])
 fprintf('complete'); disp(' ');
 
+if ~isfile([processdir,tmp_subj,'_T1_2_MNI.mat'])
+    disp('ERROR: linear registration file does not exist')
+    return
+end
+
 % non-linear registration of T1 image to MNI space
 fprintf('  Running FNIRT...');
-eval(['!',fsl,'fnirt --in=',[anatdir,t1_img],' --aff=',[processdir,tmp_subj,'_T1_2_MNI.mat'],...
+eval(['!',fsl,'fnirt --in=',[processdir,tmp_subj,'_anat_bet.nii.gz'],' --aff=',[processdir,tmp_subj,'_T1_2_MNI.mat'],...
     ' --cout=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],' --config=T1_2_MNI152_2mm'])
 fprintf('complete'); disp(' ');
+% edit: swapped [anatdir,t1_img] for [processdir,tmp_subj,'_anat_bet.nii.gz'] (12-12-2019)
+
+if ~isfile([processdir,tmp_subj,'_T1_2_MNI_nonlinear.nii.gz'])
+    disp('ERROR: nonlinear registration file does not exist')
+    return
+end
 
 % apply transformation matricies to 4D func data
 fprintf('  Applying transformation matricies to BOLD data...');
@@ -322,6 +353,18 @@ eval(['!',fsl,'applywarp --ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain --in=',
     [processdir,tmp_subj,'_BOLD_epi2struct.mat'],' --out=',...
     [processdir,tmp_subj,'_BOLD_MNI']])
 fprintf('complete'); disp(' ');
+
+% check registration in MNI space
+eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_BOLD_MNI.nii.gz'],' $FSLDIR/data/standard/MNI152_T1_2mm_brain --cmap blue-lightblue --alpha 20 &'])
+choice = menu('Assess Registration Quality. Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    disp('REGISTRATION ERROR')
+    return
+end
+
 
 %% =================== ASL Signal Reconstruction ========================
 disp('.........................................................')
@@ -337,28 +380,6 @@ save_dir = processdir;
 save_name = [tmp_subj,'_ASL_sub.nii.gz'];
 asl_diff_vols = surround_subtraction(image,save_dir,save_name);
 
-%% varying PLD corrections
-% each slice in the data will have a difference PLD due to the 2D EPI
-% readout 
-% PLDslice(s) = 1 + (0.0538)*(slice-1)
-% baseline PLD is 1 sec
-
-% NEED TO CORRECT - OXFORD_ASL WILL NOT ACCEPT COMMA SEPARATED LIST
-% number of entries needs to equal the number of label and control pairs??
-
-% bolus = 1.665;
-% 
-% % create PLD array
-% for xx = 1:2:length(asl_diff_vols)
-%     PLD(xx) = 1 + (0.0538*(xx-1));
-% end
-% 
-% tis_delay = PLD + bolus;
-% 
-% tis_str = sprintf('%0f,' , tis_delay); % prints output to comma separated  list
-% tis_str = tis_str(1:end-1); % strip final comma
-
-% use tis_str as input for --tis option in oxford_asl
 %% Compute voxelwise CBF0 map
 %  index of vascular tension with partial volume and T2* corrections
 %  (Chappell 2009/11)
@@ -373,11 +394,11 @@ m0_img = [m0dir,m0_file];
 disp('Computing voxelwise CBF perfusion map')
 fprintf('  Running Oxford_ASL...'); disp(' ');
 eval(['!',fsl,'oxford_asl -i ',[processdir,tmp_subj,'_ASL_sub.nii.gz'],' -o ',...
-       [processdir,tmp_subj,'_output_cbf'],' -m ',[processdir,tmp_subj,'_ASL_meanBrain_mask.nii.gz'],...
-       ' --tis=2.665',' --bolus=1.665 --casl -r ',[anatdir,tmp_subj,'_anat_brain.nii.gz'],...
+       [processdir,tmp_subj,'_output_cbf'],' -m ',[processdir,tmp_subj,'_ASL_meanBrain_mask.nii.gz'],' --mc --iaf=diff ',...
+       '--tis=2.665 --bolus=1.665 --casl -r ',[processdir,tmp_subj,'_anat_bet.nii.gz'],...
        ' --te=10 -c ',m0_img,' --cmethod=voxel ','--alpha=',num2str(0.84),' ',...
-       ' --t2star --echospacing=0.00047 --pvcorr --pvgm=',[anatdir,tmp_subj,'_anat_brain_pve_1.nii.gz'],...
-       ' --pvwm=',[anatdir,tmp_subj,'_anat_brain_pve_2.nii.gz']])
+       ' --slicedt=0.0538 --t2star --echospacing=0.00047 --pvcorr --pvgm=',[processdir,tmp_subj,'_anat_bet_pve_1.nii.gz'],...
+       ' --pvwm=',[processdir,tmp_subj,'_anat_bet_pve_2.nii.gz']])
 fprintf('complete'); disp(' ');
 
 % move absolute perfusion map into processdir
@@ -410,21 +431,33 @@ fprintf('complete'); disp(' ');
 %  resample segmented tissue masks into MNI
 fprintf('  Resampling segmented tissue masks...')
 eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[anatdir,tmp_subj,'_anat_brain_seg_0.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--out=',[processdir,tmp_subj,'_anat_brain_seg_0_MNI.nii.gz']])
+    '--in=',[processdir,tmp_subj,'_anat_bet_seg_0.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--out=',[processdir,tmp_subj,'_anat_bet_seg_0_MNI.nii.gz']])
     
 eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[anatdir,tmp_subj,'_anat_brain_seg_1.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--out=',[processdir,tmp_subj,'_anat_brain_seg_1_MNI.nii.gz']])
+    '--in=',[processdir,tmp_subj,'_anat_bet_seg_1.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--out=',[processdir,tmp_subj,'_anat_bet_seg_1_MNI.nii.gz']])
 
 eval(['!',fsl,'applywarp',' ','--ref=$FSLDIR/data/standard/MNI152_T1_2mm_brain',' ',...
-    '--in=',[anatdir,tmp_subj,'_anat_brain_seg_2.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
-    ' ','--out=',[processdir,tmp_subj,'_anat_brain_seg_2_MNI.nii.gz']])
+    '--in=',[processdir,tmp_subj,'_anat_bet_seg_2.nii.gz'],' ','--warp=',[processdir,tmp_subj,'_T1_2_MNI_nonlinear'],...
+    ' ','--out=',[processdir,tmp_subj,'_anat_bet_seg_2_MNI.nii.gz']])
 fprintf('complete'); disp(' ');
+
+%% check resampled data in MNI space
+eval(['!',fsl,'fsleyes $FSLDIR/data/standard/MNI152_T1_2mm_brain --cmap blue-lightblue --alpha 20 ',...
+    [processdir,tmp_subj,'_ASL_MNI.nii.gz'],' ',[processdir,tmp_subj,'_BOLD_MNI.nii.gz',' &']])
+choice = menu('Assess Registration Quality. Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    disp('REGISTRATION ERROR')
+    return
+end
 
 disp('Resampling complete.')
 
-%% =================== BOLD Signal Preprocessing ========================
+%% =================== Signal Preprocessing ========================
 
 disp('.........................................................'); disp(' '); 
 disp(['Initiating Pre-processing for ',tmp_subj]); disp(' ');
@@ -438,7 +471,7 @@ disp('Denoising BOLD data via temporal regression...')
 % extract WM signal
 fprintf('  Extracting WM signal...')
 image = [processdir,tmp_subj,'_BOLD_MNI.nii.gz'];
-mask_image = [processdir,tmp_subj,'_anat_brain_seg_2_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_bet_seg_2_MNI.nii.gz'];
 save_dir = processdir;
 save_name = [tmp_subj,'_BOLD_WM_sig.nii.gz'];
 [wm_sig,wm_ts] = apply_mask(image,mask_image,save_dir,save_name);
@@ -447,7 +480,7 @@ fprintf('complete'); disp(' ');
 % extract CSF signal
 fprintf('  Extracting CSF signal...')
 image = [processdir,tmp_subj,'_BOLD_MNI.nii.gz'];
-mask_image = [processdir,tmp_subj,'_anat_brain_seg_0_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_bet_seg_0_MNI.nii.gz'];
 save_dir = processdir;
 save_name = [tmp_subj,'_BOLD_CSF_sig.nii.gz'];
 [csf_sig,csf_ts] = apply_mask(image,mask_image,save_dir,save_name);
@@ -483,7 +516,7 @@ disp('Denoising ASL data via temporal regression...')
 % extract WM signal
 fprintf('  Extracting WM signal...')
 image = [processdir,tmp_subj,'_ASL_MNI.nii.gz'];
-mask_image = [processdir,tmp_subj,'_anat_brain_seg_2_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_bet_seg_2_MNI.nii.gz'];
 save_dir = processdir;
 save_name = [tmp_subj,'_ASL_WM_sig.nii.gz'];
 [wm_sig,wm_ts] = apply_mask(image,mask_image,save_dir,save_name);
@@ -492,7 +525,7 @@ fprintf('complete'); disp(' ');
 % extract CSF signal
 fprintf('  Extracting CSF signal...')
 image = [processdir,tmp_subj,'_ASL_MNI.nii.gz'];
-mask_image = [processdir,tmp_subj,'_anat_brain_seg_0_MNI.nii.gz'];
+mask_image = [processdir,tmp_subj,'_anat_bet_seg_0_MNI.nii.gz'];
 save_dir = processdir;
 save_name = [tmp_subj,'_ASL_CSF_sig.nii.gz'];
 [csf_sig,csf_ts] = apply_mask(image,mask_image,save_dir,save_name);
@@ -667,40 +700,41 @@ save_dir = [processdir,tmp_subj,'_ASL_demodulated.nii.gz'];
 save_image(hdr_file,data,save_dir)
 fprintf('...complete.'); disp(' ');
 
+%% save pre-processed data
 
-%% notes
+eval(['!','cp ',[processdir,tmp_subj,'_ASL_demodulated.nii.gz'],' ',[processdir,tmp_subj,'_ASL_preprocessed.nii.gz']])
+eval(['!','cp ',[processdir,tmp_subj,'_BOLD_lowpass.nii.gz'],' ',[processdir,tmp_subj,'_BOLD_preprocessed.nii.gz']])
 
-% need to go back and figure out varied PLD - --tis option in oxford asl
+%% visualize preprocessed signals
 
-% check how pre-processing will differ for the movie data!
+close all
+set(0,'DefaultFigureWindowStyle','docked');
 
-% run melodic for rs and movie data - use generated ICAs on both datasets
-% and see if there is a correlation
+plot1 = [processdir,tmp_subj,'_BOLD_preprocessed.nii.gz'];
+label1 = char(extractAfter(plot1,'norm/'));
+plot2 = [processdir,tmp_subj,'_ASL_preprocessed.nii.gz'];
+label2 = char(extractAfter(plot2,'norm/'));
 
+figure('name',label1,'numbertitle','off')
+plot_image_ts(plot1)
+title(label1,'interpreter','none')
 
-%% fsleyes
+figure('name',label2,'numbertitle','off')
+plot_image_ts(plot2)
+title(label2,'interpreter','none')
 
-% eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_denoised.nii.gz'],' &'])
+figure('name','combined','numbertitle','off')
+plot_image_ts(plot1); hold on
+plot_image_ts(plot2)
 
-%% workspace visualize signals
-% % 
-% close all
-% set(0,'DefaultFigureWindowStyle','docked');
-% 
-% plot1 = [processdir,tmp_subj,'_BOLD_lowpass.nii.gz'];
-% label1 = char(extractAfter(plot1,'norm/'));
-% plot2 = [processdir,tmp_subj,'_ASL_demodulated.nii.gz'];
-% label2 = char(extractAfter(plot2,'norm/'));
-% % plot3 = [processdir,tmp_subj,'_BOLD_window_avg.nii.gz'];
-% % label3 = char(extractAfter(plot3,'norm/'));
-% 
-% figure('name',label1,'numbertitle','off')
-% plot_image_ts(plot1)
-% title(label1,'interpreter','none')
-% 
-% figure('name',label2,'numbertitle','off')
-% plot_image_ts(plot2)
-% title(label2,'interpreter','none')
+choice = menu('Assess Preprocessed Signals. Continue?','Yes','No');
+if choice==1 || choice==0
+   close all
+elseif choice==2
+    close all
+    disp('PRE-PROCESSING ERROR')
+    return
+end
 
 
 end
