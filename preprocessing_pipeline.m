@@ -13,15 +13,16 @@ fsleyes = '/usr/local/fsl/bin/fsleyes';
 fsl = '/usr/local/fsl/bin/';
 afni = '/Users/kaden_shearer/abin/';
 % control subject directory
-subj_path = '/Users/kaden_shearer/Dropbox/kaden_thesis/movie_data/varsity_data/controls/';
+subj_path = '/Users/kaden_shearer/Dropbox/kaden_thesis/data/varsity_data/controls/';
 subj_dir = dir([subj_path,'n*']);
 
 %% ========================= RS Pre-Processing =============================
 
-for ii = 2%1:length(subj_dir)
+for ii = 1%1:length(subj_dir)
     
 close all
 clc
+clearvars -except fsleyes fsl afni subj_path subj_dir ii
 
 tmp_subj = subj_dir(ii).name;
 disp(['============== Working on ',tmp_subj,' RS data... =================='])
@@ -42,15 +43,35 @@ fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
 %% Separate BOLD and ASL echoes
 % echo1 = ASL, echo2 = BOLD
+fprintf('Separating BOLD and ASL echoes...'); disp(' ');
 
-msg = sprintf('Separating BOLD and ASL echoes...'); n=numel(msg); fprintf(msg)
+slicetimer_img = load_image([processdir,tmp_subj,'_pcasl_slicetimer.nii.gz']);
+
+tmp_length = size(slicetimer_img,4);
+thresh = tmp_length/2;
+
+
+%%
 % ASL data
 eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_slicetimer.nii.gz'],...
-    ' ',[processdir,tmp_subj,'_pcasl_ASL.nii.gz'],' ','0',' ','140']);
+    ' ',[processdir,tmp_subj,'_pcasl_ASL.nii.gz'],' ','0',' ',num2str(thresh)]);
 % BOLD data
 eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_slicetimer.nii.gz'],...
-    ' ',[processdir,tmp_subj,'_pcasl_BOLD.nii.gz'],' ','140',' ','140']);
-fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
+    ' ',[processdir,tmp_subj,'_pcasl_BOLD.nii.gz'],' ',num2str(thresh),' ',num2str(thresh)]);
+fprintf('complete'); disp(' ');
+
+%% ensure echoes are separated correctly
+
+eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_pcasl_slicetimer.nii.gz',' &']])
+
+choice = menu(['Assess Echo Separation (Slice ',num2str(thresh),'). Continue?'],'Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    disp('Echo Separation ERROR')
+    return
+end
 
 %% Delete first 2 volumes in each echo
 % ensures that the MR signal is stabilized and  subject is acclimitized to
@@ -58,9 +79,9 @@ fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
 msg = sprintf('Ensuring MR signal stabilization...'); n=numel(msg); fprintf(msg)
 eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_ASL.nii.gz'],...
-    ' ',[processdir,tmp_subj,'_ASL_corr.nii.gz'],' ','2',' ','138']);
+    ' ',[processdir,tmp_subj,'_ASL_corr.nii.gz'],' ','2',' ',num2str(thresh-2)]);
 eval(['!',fsl,'fslroi',' ',[processdir,tmp_subj,'_pcasl_BOLD.nii.gz'],...
-    ' ',[tmp_subj,'_BOLD_corr.nii.gz'],' ','2',' ','138']);
+    ' ',[tmp_subj,'_BOLD_corr.nii.gz'],' ','2',' ',num2str(thresh-2)]);
 fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
 %% Signal despiking
@@ -83,6 +104,28 @@ eval(['!','rm',' ','despike+orig.HEAD']);
 
 fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
+%% check despiking
+
+figure('name','BOLD despike','numbertitle','off')
+plot_image_ts([processdir,tmp_subj,'_BOLD_corr.nii.gz']); hold on
+plot_image_ts([processdir,tmp_subj,'_BOLD_despike.nii.gz']);
+legend('raw','despiked');
+
+figure('name','ASL despike','numbertitle','off')
+plot_image_ts([processdir,tmp_subj,'_ASL_corr.nii.gz']); hold on
+plot_image_ts([processdir,tmp_subj,'_ASL_despike.nii.gz']);
+legend('raw','despiked');
+
+choice = menu('Assess Signal Despiking. Continue?','Yes','No');
+if choice==1 || choice==0
+   close all
+elseif choice==2
+    close all
+    disp('Signal Despiking ERROR')
+    return
+end
+
+
 %% MCFLIRT motion correction
 % use first volume as template, least square approach and 6 parameter
 % spatial transformation (rigid-body)
@@ -95,6 +138,25 @@ eval(['!',fsl,'mcflirt',' ','-in',' ',[processdir,tmp_subj,'_BOLD_despike.nii.gz
         '1',' ','-out',' ',[processdir,tmp_subj,'_BOLD_mcf'],' ','-plots'])
 
 fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
+
+%% check motion parameters
+
+par_file = [processdir,tmp_subj,'_BOLD_mcf.par'];
+figure('name','BOLD MCF','numbertitle','off')
+[~,~,~] = plot_motion_parameters(par_file);
+
+par_file = [processdir,tmp_subj,'_ASL_mcf.par'];
+figure('name','ASL MCF','numbertitle','off')
+[~,~,~] = plot_motion_parameters(par_file);
+
+choice = menu('Assess Motion Parameters. Continue?','Yes','No');
+if choice==1 || choice==0
+   close all
+elseif choice==2
+    close all
+    disp('Motion Correction ERROR')
+    return
+end
 
 %% Brain extract ts
 % create mean image, bet mean image, create brain mask, multiply mask
@@ -120,7 +182,7 @@ eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
         [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' ','-m'])    
 eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_BOLD_meanvol.nii.gz'],' ',...
     [processdir,tmp_subj,'_BOLD_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
-choice = menu('Continue?','Yes','No');
+choice = menu('Assess BET Quality. Continue?','Yes','No');
 if choice==1 || choice==0
    eval(['!','pkill fsleyes'])
 elseif choice==2
@@ -162,7 +224,7 @@ eval(['!',fsl,'bet',' ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
 eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_meanvol.nii.gz'],' ',...
     [processdir,tmp_subj,'_ASL_meanBrain.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
 
-choice = menu('Continue?','Yes','No');
+choice = menu('Assess BET Quality. Continue?','Yes','No');
 if choice==1 || choice==0
    eval(['!','pkill fsleyes'])
 elseif choice==2
@@ -237,6 +299,20 @@ bold_window_avg = window_average([processdir,tmp_subj,'_BOLD_ts.nii.gz'],...
     [processdir,tmp_subj,'_BOLD_window_avg.nii.gz']);
 fprintf(repmat('\b',1,n)); fprintf([msg,'complete']); disp(' ');
 
+figure('name','Window Averaging','numbertitle','off')
+plot_image_ts([processdir,tmp_subj,'_BOLD_ts.nii.gz']); hold on;
+plot_image_ts([processdir,tmp_subj,'_BOLD_window_avg.nii.gz']);
+legend('raw','window averaged')
+
+choice = menu('Assess Window Averaging. Continue?','Yes','No');
+if choice==1 || choice==0
+   close all
+elseif choice==2
+    close all
+    disp('Window Averaging ERROR')
+    return
+end
+
 %% Co-Registration and Transformation into 2mm MNI Space
 
 disp('Transforming BOLD data into 2mm MNI space...');
@@ -251,7 +327,7 @@ eval(['!',fsl,'bet ',[anatdir,t1_img],' ',[processdir,tmp_subj,'_anat_bet.nii.gz
 eval(['!',fsl,'fsleyes ',[anatdir,t1_img],' ',...
     [processdir,tmp_subj,'_anat_bet.nii.gz'],' --cmap blue-lightblue --alpha 50 &'])
 
-choice = menu('Continue?','Yes','No');
+choice = menu('Assess BET Quality. Continue?','Yes','No');
 if choice==1 || choice==0
    eval(['!','pkill fsleyes'])
 elseif choice==2
@@ -407,6 +483,18 @@ nativespacedir = [processdir,[tmp_subj,'_output_cbf'],'/native_space/'];
 eval(['!','cp ',[nativespacedir,'perfusion_calib.nii.gz'],' ',processdir])
 eval(['!','mv ',[processdir,'perfusion_calib.nii.gz'],' ',[processdir,tmp_subj,'_ASL_perfusion_map.nii.gz']])
 fprintf('complete'); disp(' ');
+
+%% check perfusion map
+
+eval(['!',fsl,'fsleyes ',[processdir,tmp_subj,'_ASL_perfusion_map.nii.gz'],' &'])
+choice = menu('Preview Perfusion Map. Continue?','Yes','No');
+if choice==1 || choice==0
+   eval(['!','pkill fsleyes'])
+elseif choice==2
+    eval(['!','pkill fsleyes'])
+    disp('Oxford_ASL ERROR')
+    return
+end
 
 %% Resample ASL data into 2mm MNI space
 % use linear and nonlinear matricies generated in previous steps for bold
@@ -726,6 +814,7 @@ title(label2,'interpreter','none')
 figure('name','combined','numbertitle','off')
 plot_image_ts(plot1); hold on
 plot_image_ts(plot2)
+legend('BOLD','ASL');
 
 choice = menu('Assess Preprocessed Signals. Continue?','Yes','No');
 if choice==1 || choice==0
@@ -739,4 +828,4 @@ end
 
 end
 
-disp(' '); disp('PREPROCESSING COMPLETE FOR ALL SUBJECTS')
+disp(' '); disp('PREPROCESSING COMPLETE')
